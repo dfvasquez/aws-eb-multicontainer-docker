@@ -1,0 +1,120 @@
+{
+  "AWSEBDockerrunVersion": 2,
+  "containerDefinitions": [
+      {
+          "command": [
+                "bundle",
+                "exec",
+                "rails",
+                "server",
+                "-p",
+                "5000",
+                "-b",
+                "0.0.0.0"
+            ],
+          "essential": true,
+          "image": "image in ECR",
+          "mountPoints": [
+              {
+                  "containerPath": "/app/tmp/cache",
+                  "sourceVolume": "Rails_Cache"
+              },
+              {
+                  "containerPath": "/usr/local/bundle",
+                  "sourceVolume": "Bundle"
+              },
+              {
+                "containerPath": "/app/node_modules",
+                "sourceVolume": "Node_Modules"
+              }
+          ],
+          "name": "web",
+          "memory": 512,
+          "cpu": 15,
+          "portMappings": [
+              {
+                  "hostPort": 5000,
+                  "containerPort": 5000
+              }
+          ]
+      },
+      {
+        "name": "nginx-proxy",
+        "image": "nginx",
+        "memory": 256,
+        "portMappings": [
+          {
+            "hostPort": 80,
+            "containerPort": 80
+          }
+        ],
+        "links": [
+          "web"
+        ],
+        "mountPoints": [
+          {
+            "sourceVolume": "nginx-proxy-conf",
+            "containerPath": "/etc/nginx/conf.d"
+          }
+          ,
+          {
+            "sourceVolume": "Assets",
+            "containerPath": "/usr/share/js/assets"
+          }
+        ]        
+    },
+    {
+        "command": [
+            "bundle",
+            "exec",
+            "sidekiq",
+            "-C",
+            "config/sidekiq.yml"
+        ],
+        "image": "image in ECR",
+        "name": "sidekiq",
+        "essential": true,
+        "memory": 256
+    }
+  ]
+  ,
+  "volumes": [
+    {
+        "host": {
+            "sourcePath": "/var/app/current/tmp/cache"
+        },
+        "name": "Rails_Cache"
+    },
+    {
+        "host": {
+            "sourcePath": "bundle"
+        },
+        "name": "Bundle"
+    },
+    {
+        "host": {
+            "sourcePath": "/var/app/current/node_modules"
+        },
+        "name": "Node_Modules"
+    },
+    {
+        "host": {
+            "sourcePath": "/var/app/current/public/packs"
+        },
+        "name": "Packs"
+    },
+    {
+        "host": {
+            "sourcePath": "/var/app/current/public/assets"
+        },
+        "name": "Assets"
+    }
+    ,
+    {
+        "name": "nginx-proxy-conf",
+        "host": {
+            "sourcePath": "/var/app/current/proxy/conf.d"
+        }
+    }
+]
+}

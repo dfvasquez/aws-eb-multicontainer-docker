@@ -1,0 +1,72 @@
+name: CD Workflow
+
+on:
+  push:
+    branches:
+    - feat/migracion
+
+jobs:
+  deploy-production:
+    name: Deploy
+    #if: github.event_name == 'push' && github.ref == 'refs/heads/feat/migracion'
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout repo
+      uses: actions/checkout@v2
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v1
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ secrets.AWS_REGION }}
+
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v1
+    - name: Build, tag & push image to ECR
+      id: build-image
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        ECR_REPOSITORY: ${{ secrets.REPOSITORY_ECR }} 
+        IMAGE_TAG: ${{ github.sha }}
+        DOCKER_ARGS: 'soloparacompilarlaimagen'
+        DOCKER_MK: ${{ secrets.RAILS_MASTER_KEY }}
+        APP_HOST: ${{ secrets.APPLICATION_HOST }} 
+
+      run: |
+        docker build --build-arg RAILS_MASTER_KEY=$DOCKER_MK --build-arg REDISCLOUD_URL=$DOCKER_ARGS --build-arg  APPLICATION_HOST=$APP_HOST --build-arg  SENDGRID_SMTP_DOMAIN=$DOCKER_ARGS --build-arg  SENDGRID_SMTP_ADDRESS=$DOCKER_ARGS --build-arg  SENDGRID_SMTP_PASSWORD=$DOCKER_ARGS --build-arg  SENDGRID_SMTP_USER_NAME=$DOCKER_ARGS --build-arg RUBY_VERSION=2.5.1 --build-arg PG_MAJOR=11 --build-arg NODE_MAJOR=12 --build-arg YARN_VERSION=1.22.4 --build-arg BUNDLER_VERSION=2.0.2 -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG -t $ECR_REGISTRY/$ECR_REPOSITORY:latest .
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+        echo "::set-output name=image::$ECR_REGISTRY/$ECR_REPOSITORY:latest"
+         
+    - name: Generate deployment package
+      run: zip -r deploy.zip * -x "**node_modules**"
+
+    - name: Get timestamp
+      uses: gerred/actions/current-time@master
+      id: current-time
+
+    - name: Run string replace
+      uses: frabert/replace-string-action@master
+      id: format-time
+      with:
+        pattern: '[:\.]+'
+        string: "${{ steps.current-time.outputs.time }}"
+        replace-with: '-'
+        flags: 'g'
+
+
+
+    - name: Beanstalk Deploy for app
+      uses: einaregilsson/beanstalk-deploy@v10
+      with:
+        aws_access_key: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws_secret_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        application_name: ${{ secrets.APPLICATION_NAME }}
+        environment_name: ${{ secrets.ENVIRONMENT_NAME }}
+        region: ${{ secrets.AWS_REGION }}
+        version_label: "${{ secrets.APPLICATION_NAME }}${{ steps.format-time.outputs.replaced }}"
+        deployment_package: deploy.zip
+
+    - name: Deployed!
+      run: echo App deployed to ELB
